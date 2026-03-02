@@ -1,0 +1,1397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Snowball Fight!</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  background: #b8e4f9;
+  font-family: 'Comic Sans MS', 'Chalkboard SE', cursive;
+  overflow: hidden;
+  width: 100%; height: 100%;
+  user-select: none;
+  touch-action: none;
+}
+body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+}
+#ui {
+  position: fixed;
+  top: max(10px, env(safe-area-inset-top));
+  left: 0; right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  z-index: 100;
+  pointer-events: none;
+}
+.ui-badge {
+  background: white;
+  border-radius: 99px;
+  padding: 4px 14px;
+  font-size: 0.85rem;
+  font-weight: bold;
+  color: #2a7abf;
+  box-shadow: 0 3px 0 #3a86c4, 0 5px 12px rgba(0,0,0,0.12);
+}
+#canvas {
+  display: block;
+  touch-action: none;
+  cursor: crosshair;
+}
+#overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(180,230,255,0.93);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 20px;
+}
+#overlay h1 {
+  font-size: clamp(1.6rem, 6vw, 2.8rem);
+  font-weight: bold;
+  color: #1a6fa8;
+  text-shadow: 0 3px 0 #7ec8f0;
+  margin-bottom: 10px;
+  text-align: center;
+}
+#overlay p {
+  font-size: clamp(0.9rem, 3vw, 1.1rem);
+  color: #2a7fbf;
+  margin-bottom: 24px;
+  text-align: center;
+  max-width: 300px;
+  line-height: 1.6;
+}
+#startBtn {
+  background: #ff9ed2;
+  border: none;
+  border-radius: 99px;
+  padding: 14px 44px;
+  font-family: inherit;
+  font-size: clamp(1rem, 4vw, 1.3rem);
+  font-weight: bold;
+  color: white;
+  cursor: pointer;
+  box-shadow: 0 5px 0 #e06aab;
+  transition: transform 0.1s;
+  -webkit-appearance: none;
+}
+#startBtn:active { transform: translateY(3px); box-shadow: 0 2px 0 #e06aab; }
+#hint {
+  position: fixed;
+  bottom: 14px;
+  font-size: 0.78rem;
+  color: #3a86c4;
+  font-weight: bold;
+  pointer-events: none;
+  text-align: center;
+  padding: 0 10px;
+}
+/* ---- Mobile joysticks ---- */
+#joysticks {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: 160px;
+  display: none;
+  pointer-events: none;
+  z-index: 50;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+#joysticks.visible { display: flex; }
+.jzone {
+  flex: 1;
+  position: relative;
+  pointer-events: all;
+}
+.jbase {
+  position: absolute;
+  width: 100px; height: 100px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.18);
+  border: 3px solid rgba(255,255,255,0.45);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.jthumb {
+  position: absolute;
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.7);
+  border: 3px solid rgba(100,180,255,0.8);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  display: none;
+}
+.jlabel {
+  position: absolute;
+  bottom: 8px; left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.7rem;
+  color: rgba(255,255,255,0.7);
+  font-weight: bold;
+  letter-spacing: 0.05em;
+  pointer-events: none;
+}
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <div class="ui-badge">&#10052; Score: <span id="scoreDisplay">0</span></div>
+  <div class="ui-badge">&#128155; Lives: <span id="livesDisplay">3</span></div>
+  <div class="ui-badge">&#127754; Wave: <span id="waveDisplay">1</span></div>
+</div>
+
+<canvas id="canvas"></canvas>
+<div id="hint">WASD / Arrows to move &nbsp;&#183;&nbsp; Mouse to aim &amp; click to throw!</div>
+
+<!-- Mobile joysticks -->
+<div id="joysticks">
+  <div class="jzone" id="jzoneLeft">
+    <div class="jbase" id="jbaseLeft"></div>
+    <div class="jthumb" id="jthumbLeft"></div>
+    <div class="jlabel">MOVE</div>
+  </div>
+  <div class="jzone" id="jzoneRight">
+    <div class="jbase" id="jbaseRight"></div>
+    <div class="jthumb" id="jthumbRight"></div>
+    <div class="jlabel">AIM &amp; THROW</div>
+  </div>
+</div>
+
+<div id="overlay">
+  <h1>&#10052; Snowball Fight! &#10052;</h1>
+  <p>Throw snowballs at the other kids before they get you! Everyone laughs when they get hit!</p>
+  <button id="startBtn">Let's Play!</button>
+</div>
+
+<script>
+var canvas = document.getElementById('canvas');
+var ctx = canvas.getContext('2d');
+var overlay = document.getElementById('overlay');
+var startBtn = document.getElementById('startBtn');
+var scoreDisplay = document.getElementById('scoreDisplay');
+var livesDisplay = document.getElementById('livesDisplay');
+var waveDisplay = document.getElementById('waveDisplay');
+
+var isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+var JOYSTICK_H = 160; // height reserved for joysticks on mobile
+
+function resize() {
+  var vw = window.innerWidth;
+  var vh = window.innerHeight;
+  var topBar = 44; // space for UI badges
+  var bottomReserve = isMobile ? JOYSTICK_H : 24;
+  var availH = vh - topBar - bottomReserve;
+  var availW = vw - (isMobile ? 0 : 20);
+  // Canvas fills available width, height capped at 0.7 * width, also capped by availH
+  var cw = Math.min(availW, 720);
+  var ch = Math.min(Math.floor(cw * 0.68), availH);
+  cw = Math.floor(ch / 0.68);
+  if (cw > availW) { cw = availW; ch = Math.floor(cw * 0.68); }
+  canvas.width  = cw;
+  canvas.height = ch;
+  // Position canvas: centered horizontally, just below top bar
+  canvas.style.marginTop = topBar + 'px';
+  // Show/hide joysticks
+  var jel = document.getElementById('joysticks');
+  if (isMobile) {
+    jel.classList.add('visible');
+    document.getElementById('hint').style.display = 'none';
+  } else {
+    jel.classList.remove('visible');
+  }
+}
+resize();
+window.addEventListener('resize', resize);
+
+function W() { return canvas.width; }
+function H() { return canvas.height; }
+
+var gameRunning = false;
+var score = 0;
+var lives = 3;
+var wave = 1;
+var player = null;
+var snowballs = [];
+var enemies = [];
+var particles = [];
+var floaters = [];
+var snowflakes = [];
+var keys = {};
+var mouseX = 200;
+var mouseY = 200;
+var lastTime = 0;
+
+var COATS = ['#90e0a0','#ffd166','#a29bfe','#fd7c70','#74c0fc','#ffb347'];
+var HATS  = ['#52b788','#e6a817','#6c63d5','#e05b4f','#4aa8e8','#e07030'];
+
+// ---- Sound Engine (Web Audio API, all procedural) ----
+var audioCtx = null;
+function getAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function playThrow() {
+  try {
+    var ac = getAudio();
+    var buf = ac.createBuffer(1, ac.sampleRate * 0.12, ac.sampleRate);
+    var d = buf.getChannelData(0);
+    for (var i = 0; i < d.length; i++) {
+      var t = i / ac.sampleRate;
+      // Whoosh: filtered noise with pitch drop
+      d[i] = (Math.random() * 2 - 1) * Math.exp(-t * 28) * 0.7;
+    }
+    var src = ac.createBufferSource();
+    src.buffer = buf;
+    var filter = ac.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(800, ac.currentTime);
+    filter.frequency.exponentialRampToValueAtTime(200, ac.currentTime + 0.12);
+    filter.Q.value = 1.5;
+    var gain = ac.createGain();
+    gain.gain.setValueAtTime(0.4, ac.currentTime);
+    src.connect(filter); filter.connect(gain); gain.connect(ac.destination);
+    src.start();
+  } catch(e) {}
+}
+
+function playHitEnemy() {
+  try {
+    var ac = getAudio();
+    // Soft splat: low thud + sparkle
+    var dur = 0.22;
+    var buf = ac.createBuffer(1, ac.sampleRate * dur, ac.sampleRate);
+    var d = buf.getChannelData(0);
+    for (var i = 0; i < d.length; i++) {
+      var t = i / ac.sampleRate;
+      var thud = Math.sin(2 * Math.PI * 120 * t) * Math.exp(-t * 30) * 0.8;
+      var sparkle = (Math.random() * 2 - 1) * Math.exp(-t * 18) * 0.3;
+      d[i] = thud + sparkle;
+    }
+    var src = ac.createBufferSource();
+    src.buffer = buf;
+    var gain = ac.createGain();
+    gain.gain.setValueAtTime(0.55, ac.currentTime);
+    src.connect(gain); gain.connect(ac.destination);
+    src.start();
+    // Cheerful rising blip
+    setTimeout(function() {
+      try {
+        var ac2 = getAudio();
+        var osc = ac2.createOscillator();
+        var g2 = ac2.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(520, ac2.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(900, ac2.currentTime + 0.12);
+        g2.gain.setValueAtTime(0.25, ac2.currentTime);
+        g2.gain.exponentialRampToValueAtTime(0.001, ac2.currentTime + 0.18);
+        osc.connect(g2); g2.connect(ac2.destination);
+        osc.start(); osc.stop(ac2.currentTime + 0.18);
+      } catch(e) {}
+    }, 30);
+  } catch(e) {}
+}
+
+function playHitPlayer() {
+  try {
+    var ac = getAudio();
+    // Descending "oof" tones
+    var notes = [400, 300, 220];
+    for (var n = 0; n < notes.length; n++) {
+      (function(freq, delay) {
+        setTimeout(function() {
+          try {
+            var ac2 = getAudio();
+            var osc = ac2.createOscillator();
+            var g = ac2.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, ac2.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(freq * 0.7, ac2.currentTime + 0.15);
+            g.gain.setValueAtTime(0.3, ac2.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.001, ac2.currentTime + 0.2);
+            osc.connect(g); g.connect(ac2.destination);
+            osc.start(); osc.stop(ac2.currentTime + 0.2);
+          } catch(e) {}
+        }, delay);
+      })(notes[n], n * 60);
+    }
+    // Impact noise burst
+    var buf = ac.createBuffer(1, ac.sampleRate * 0.08, ac.sampleRate);
+    var d = buf.getChannelData(0);
+    for (var i = 0; i < d.length; i++) {
+      d[i] = (Math.random()*2-1) * Math.exp(-(i/ac.sampleRate)*40) * 0.6;
+    }
+    var src = ac.createBufferSource();
+    src.buffer = buf;
+    var g2 = ac.createGain(); g2.gain.value = 0.4;
+    src.connect(g2); g2.connect(ac.destination);
+    src.start();
+  } catch(e) {}
+}
+
+function playWaveClear() {
+  try {
+    // Happy ascending arpeggio
+    var melody = [523, 659, 784, 1047]; // C E G C
+    for (var n = 0; n < melody.length; n++) {
+      (function(freq, delay) {
+        setTimeout(function() {
+          try {
+            var ac = getAudio();
+            var osc = ac.createOscillator();
+            var g = ac.createGain();
+            osc.type = 'triangle';
+            osc.frequency.value = freq;
+            g.gain.setValueAtTime(0.0, ac.currentTime);
+            g.gain.linearRampToValueAtTime(0.3, ac.currentTime + 0.02);
+            g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.35);
+            osc.connect(g); g.connect(ac.destination);
+            osc.start(); osc.stop(ac.currentTime + 0.35);
+          } catch(e) {}
+        }, delay);
+      })(melody[n], n * 100);
+    }
+  } catch(e) {}
+}
+
+function playGameOver() {
+  try {
+    var melody = [392, 349, 311, 262]; // G F Eb C descending sad
+    for (var n = 0; n < melody.length; n++) {
+      (function(freq, delay) {
+        setTimeout(function() {
+          try {
+            var ac = getAudio();
+            var osc = ac.createOscillator();
+            var g = ac.createGain();
+            osc.type = 'sawtooth';
+            var flt = ac.createBiquadFilter();
+            flt.type = 'lowpass'; flt.frequency.value = 600;
+            osc.frequency.value = freq;
+            g.gain.setValueAtTime(0.0, ac.currentTime);
+            g.gain.linearRampToValueAtTime(0.25, ac.currentTime + 0.03);
+            g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.5);
+            osc.connect(flt); flt.connect(g); g.connect(ac.destination);
+            osc.start(); osc.stop(ac.currentTime + 0.5);
+          } catch(e) {}
+        }, delay);
+      })(melody[n], n * 140);
+    }
+  } catch(e) {}
+}
+
+function playWindAmbience() {
+  try {
+    var ac = getAudio();
+    var bufSize = ac.sampleRate * 2;
+    var buf = ac.createBuffer(1, bufSize, ac.sampleRate);
+    var d = buf.getChannelData(0);
+    for (var i = 0; i < bufSize; i++) d[i] = Math.random() * 2 - 1;
+    var src = ac.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    var filter = ac.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 300;
+    filter.Q.value = 0.5;
+    var gain = ac.createGain();
+    gain.gain.value = 0.04;
+    src.connect(filter); filter.connect(gain); gain.connect(ac.destination);
+    src.start();
+    return { src: src, gain: gain };
+  } catch(e) { return null; }
+}
+
+var windNode = null;
+
+// ---- Web Speech API Voice System ----
+var speechVoices = [];
+var voicesLoaded = false;
+var speechQueue = [];
+var speechBusy = false;
+
+function loadVoices() {
+  if (!window.speechSynthesis) return;
+  speechVoices = window.speechSynthesis.getVoices();
+  if (speechVoices.length > 0) voicesLoaded = true;
+}
+loadVoices();
+if (window.speechSynthesis) {
+  window.speechSynthesis.onvoiceschanged = function() { loadVoices(); };
+}
+
+// Pick best voice for a kid — prefer child/female/high voices
+function pickVoice(kidIndex) {
+  if (!voicesLoaded) loadVoices();
+  var all = speechVoices;
+  if (!all || all.length === 0) return null;
+
+  // Preferred: voices that sound young/high
+  var preferred = [];
+  var keywords = ['child','kid','junior','small','girl','boy','junior','zira','aria','nicky','reed','sandy','rocko','bells','bubbles','cellos','junior','princess','trinoids','whisper','bad news','good news','hysterical','jester'];
+  for (var i = 0; i < all.length; i++) {
+    var name = (all[i].name || '').toLowerCase();
+    for (var k = 0; k < keywords.length; k++) {
+      if (name.indexOf(keywords[k]) !== -1) { preferred.push(all[i]); break; }
+    }
+  }
+  // Fallback: female voices tend to be higher pitched
+  if (preferred.length === 0) {
+    var femaleKw = ['female','woman','fiona','karen','moira','tessa','veena','samantha','victoria','allison','ava','susan','kate'];
+    for (var i = 0; i < all.length; i++) {
+      var name = (all[i].name || '').toLowerCase();
+      for (var k = 0; k < femaleKw.length; k++) {
+        if (name.indexOf(femaleKw[k]) !== -1) { preferred.push(all[i]); break; }
+      }
+    }
+  }
+  // Final fallback: any en-US voice
+  if (preferred.length === 0) {
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].lang && all[i].lang.indexOf('en') === 0) preferred.push(all[i]);
+    }
+  }
+  if (preferred.length === 0) preferred = all;
+  return preferred[kidIndex % preferred.length];
+}
+
+// Speak a phrase as a child voice — pitch up + fast rate
+// kidIndex 0..5 gives each enemy a slightly different voice
+// onDone called when finished
+var lastSpeakTime = {};
+function kidSpeak(text, kidIndex, opts) {
+  if (!window.speechSynthesis) return;
+  opts = opts || {};
+  var now = Date.now();
+  var cooldown = opts.cooldown || 800;
+  var key = 'kid' + kidIndex;
+  if (lastSpeakTime[key] && now - lastSpeakTime[key] < cooldown) return;
+  lastSpeakTime[key] = now;
+
+  // Cancel only this kid's pending speech (we queue globally but check per kid)
+  try { window.speechSynthesis.cancel(); } catch(e) {}
+
+  var utt = new SpeechSynthesisUtterance(text);
+  var voice = pickVoice(kidIndex);
+  if (voice) utt.voice = voice;
+
+  // Each kid has a unique pitch/rate combo — higher = younger/squeakier
+  var pitchOptions  = [1.8, 2.0, 1.6, 2.0, 1.7, 1.9];
+  var rateOptions   = [1.3, 1.5, 1.2, 1.6, 1.4, 1.3];
+  utt.pitch  = (opts.pitch  !== undefined) ? opts.pitch  : pitchOptions[kidIndex % pitchOptions.length];
+  utt.rate   = (opts.rate   !== undefined) ? opts.rate   : rateOptions[kidIndex % rateOptions.length];
+  utt.volume = opts.volume !== undefined ? opts.volume : 0.9;
+
+  try { window.speechSynthesis.speak(utt); } catch(e) {}
+}
+
+// --- Per-event phrases ---
+var TAUNT_PHRASES = [
+  ['Get ready!', 'Eat snow!', 'Here it comes!', 'Gotcha!', 'Too slow!', 'Snowball time!'],
+  ['Over here!', 'Heads up!', 'Take that!', 'Yoink!', 'Catch this!'],
+  ['Ha! Miss me!', 'You can\'t hit me!', 'Nah nah nah!', 'Try again!'],
+  ['Watch out!', 'Coming at ya!', 'Ready or not!', 'Boom!'],
+  ['Whoosh!', 'Surprise!', 'Got you!', 'No escape!'],
+  ['Here goes!', 'Aim... fire!', 'Bull\'s eye!', 'Splash!']
+];
+var HIT_PHRASES = [
+  ['Ow! Hahaha!', 'Got me! Ha!', 'Ahh! Good one!', 'Nooo! Hehehe!', 'You got me!'],
+  ['Waaah! Haha!', 'Oh no! Teehee!', 'Ahhh! So cold!', 'Bull\'s eye! Haha!'],
+  ['Oof! Hahaha!', 'Bleh! Hehe!', 'Right in the face! Ha!', 'Cold cold cold!'],
+  ['Eek! Hahaha!', 'Ahh you win! Hehe!', 'So cold! Haha!', 'Noooo!'],
+  ['Splat! Hahaha!', 'Ahh! You got me!', 'Brr! So cold!', 'Haha okay okay!'],
+  ['Whoa! Hehe!', 'Nice shot! Haha!', 'Gotcha back next time!', 'Woo that was cold!']
+];
+var PLAYER_HIT_PHRASES = [
+  'Haha got you!', 'Yes! Bull\'s eye!', 'Snowball one, you zero!',
+  'Did you feel that?', 'Too easy!', 'Hahaha!', 'Got you good!',
+  'Right in the face!', 'Woohoo!', 'That one was for me!'
+];
+var WAVE_PHRASES = [
+  'New wave! Let\'s go!', 'More kids incoming!', 'Here we come!',
+  'Ready for round two?', 'Snowball army, charge!', 'You can\'t stop us all!'
+];
+var GAMEOVER_PHRASES = [
+  'We won! Hahaha!', 'Snowball champions!', 'Too many of us!',
+  'Victory! Snowball fight winners!', 'Haha better luck next time!'
+];
+
+function kidSpeakTaunt(kidIndex) {
+  var pool = TAUNT_PHRASES[kidIndex % TAUNT_PHRASES.length];
+  var phrase = pool[Math.floor(Math.random() * pool.length)];
+  kidSpeak(phrase, kidIndex, { cooldown: 2500 });
+}
+
+function kidSpeakHit(kidIndex) {
+  var pool = HIT_PHRASES[kidIndex % HIT_PHRASES.length];
+  var phrase = pool[Math.floor(Math.random() * pool.length)];
+  kidSpeak(phrase, kidIndex, { pitch: 2.0, rate: 1.4, cooldown: 500 });
+}
+
+function kidSpeakPlayerHit(attackerIndex) {
+  var phrase = PLAYER_HIT_PHRASES[Math.floor(Math.random() * PLAYER_HIT_PHRASES.length)];
+  kidSpeak(phrase, attackerIndex, { pitch: 1.9, rate: 1.5, cooldown: 1000 });
+}
+
+function kidSpeakWave() {
+  var phrase = WAVE_PHRASES[Math.floor(Math.random() * WAVE_PHRASES.length)];
+  kidSpeak(phrase, Math.floor(Math.random() * 6), { pitch: 1.8, rate: 1.3, cooldown: 0 });
+}
+
+function kidSpeakGameOver() {
+  var phrase = GAMEOVER_PHRASES[Math.floor(Math.random() * GAMEOVER_PHRASES.length)];
+  setTimeout(function() {
+    kidSpeak(phrase, Math.floor(Math.random() * 6), { pitch: 1.85, rate: 1.2, cooldown: 0, volume: 1.0 });
+  }, 600);
+}
+
+function kidSpeakPlayerOof() {
+  // Player's own voice says "ow" or "got me"
+  var phrases = ['Ow!', 'Whoa!', 'Brr!', 'Cold!', 'Oof!', 'Ahh!'];
+  var phrase = phrases[Math.floor(Math.random() * phrases.length)];
+  kidSpeak(phrase, 99, { pitch: 1.75, rate: 1.4, cooldown: 600 });
+}
+
+// Keep old procedural laugh as audio-only backup (still plays alongside speech)
+function playKidLaugh() {
+  // now handled by speech — tiny chime accent only
+  try {
+    var ac = getAudio();
+    var osc = ac.createOscillator();
+    var g = ac.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(900 + Math.random()*300, ac.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(1400, ac.currentTime + 0.08);
+    g.gain.setValueAtTime(0.12, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.15);
+    osc.connect(g); g.connect(ac.destination);
+    osc.start(); osc.stop(ac.currentTime + 0.15);
+  } catch(e) {}
+}
+
+function playKidOof() {
+  // now handled by speech — small thud accent
+  try {
+    var ac = getAudio();
+    var osc = ac.createOscillator();
+    var g = ac.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(500, ac.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(280, ac.currentTime + 0.1);
+    g.gain.setValueAtTime(0.15, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.15);
+    osc.connect(g); g.connect(ac.destination);
+    osc.start(); osc.stop(ac.currentTime + 0.15);
+  } catch(e) {}
+}
+
+// Snowflakes
+function makeFlake() {
+  return {
+    x: Math.random() * W(),
+    y: Math.random() * H(),
+    r: 1.5 + Math.random() * 3,
+    speed: 25 + Math.random() * 45,
+    drift: (Math.random() - 0.5) * 18,
+    alpha: 0.3 + Math.random() * 0.5
+  };
+}
+function updateFlake(f, dt) {
+  f.y += f.speed * dt;
+  f.x += f.drift * dt;
+  if (f.y > H() + 10) { f.y = -10; f.x = Math.random() * W(); }
+}
+function drawFlake(f) {
+  ctx.save();
+  ctx.globalAlpha = f.alpha;
+  ctx.beginPath();
+  ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+  ctx.fillStyle = 'white';
+  ctx.fill();
+  ctx.restore();
+}
+
+// Background
+function drawBg() {
+  var w = W(), h = H();
+  var g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, '#c8e8f8');
+  g.addColorStop(1, '#ddf0ff');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+  var cols = 9, rows = 7;
+  var tw = w / cols, th = h / rows;
+  for (var r = 0; r < rows; r++) {
+    for (var c = 0; c < cols; c++) {
+      ctx.fillStyle = (r + c) % 2 === 0 ? 'rgba(200,230,255,0.4)' : 'rgba(220,240,255,0.2)';
+      ctx.fillRect(c * tw, r * th, tw + 1, th + 1);
+    }
+  }
+  drawPile(w * 0.08, h * 0.14, 44, 18);
+  drawPile(w * 0.9,  h * 0.18, 52, 20);
+  drawPile(w * 0.5,  h * 0.04, 38, 14);
+  drawPile(w * 0.15, h * 0.82, 48, 18);
+  drawPile(w * 0.78, h * 0.84, 42, 16);
+  drawTree(w * 0.05, h * 0.38);
+  drawTree(w * 0.93, h * 0.54);
+  drawTree(w * 0.5,  h * 0.92);
+}
+
+function drawPile(x, y, rx, ry) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(x, y, rx, ry, 0, Math.PI, 0);
+  ctx.fillStyle = '#e4f4ff';
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawTree(x, y) {
+  ctx.fillStyle = '#a0785a';
+  ctx.fillRect(x - 4, y - 8, 8, 16);
+  var layers = [
+    {dy: 0,   fw: 26, fh: 16, col: '#6db86d'},
+    {dy: -13, fw: 20, fh: 13, col: '#5aaa5a'},
+    {dy: -24, fw: 14, fh: 11, col: '#4a9a4a'}
+  ];
+  for (var i = 0; i < layers.length; i++) {
+    var l = layers[i];
+    ctx.beginPath();
+    ctx.moveTo(x, y + l.dy - l.fh);
+    ctx.lineTo(x - l.fw, y + l.dy);
+    ctx.lineTo(x + l.fw, y + l.dy);
+    ctx.closePath();
+    ctx.fillStyle = l.col;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(x, y + l.dy - l.fh + 3, l.fw * 0.55, 4, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(235,248,255,0.88)';
+    ctx.fill();
+  }
+  ctx.beginPath();
+  ctx.arc(x, y - 24 - 11 - 5, 4, 0, Math.PI * 2);
+  ctx.fillStyle = 'white';
+  ctx.fill();
+}
+
+// Draw a kid character
+// opts: { flash, laughing, walkPhase, knockPhase, isPlayer }
+function drawKid(x, y, coat, hat, skin, angle, opts) {
+  opts = opts || {};
+  var flash    = !!opts.flash;
+  var laughing = !!opts.laughing;
+  var walk     = opts.walkPhase || 0;   // 0..2PI walk cycle
+  var knock    = opts.knockPhase || 0;  // 0..1 knockdown progress (0=upright,1=flat)
+  var isPlayer = !!opts.isPlayer;
+
+  ctx.save();
+  ctx.translate(x, y);
+
+  // --- KNOCKED OUT: spin flat ---
+  if (knock > 0) {
+    var spinAngle = knock * Math.PI * 2.5; // spins around
+    var fallTilt  = knock * (Math.PI / 2); // tips over
+    var squish    = 1 - knock * 0.35;
+    ctx.rotate(spinAngle);
+    ctx.scale(1, squish);
+
+    // Shadow grows as they fall
+    ctx.beginPath();
+    ctx.ellipse(0, 14, 16 + knock*8, 4 + knock*3, 0, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(80,140,200,' + (0.15 + knock*0.2) + ')';
+    ctx.fill();
+
+    // Flat body (rotated forward)
+    ctx.save();
+    ctx.rotate(-Math.PI/2 * knock); // tips forward
+    ctx.beginPath();
+    ctx.ellipse(0, 2, 11, 13, 0, 0, Math.PI*2);
+    ctx.fillStyle = flash ? '#fff' : coat;
+    ctx.fill();
+    // Head
+    ctx.beginPath();
+    ctx.arc(0, -14, 10, 0, Math.PI*2);
+    ctx.fillStyle = flash ? '#fff' : skin;
+    ctx.fill();
+    // Hat
+    ctx.beginPath();
+    ctx.ellipse(0, -21, 9, 3.5, 0, 0, Math.PI*2);
+    ctx.fillStyle = flash ? '#fff' : hat;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.rect(-6, -32, 12, 12);
+    ctx.fillStyle = flash ? '#fff' : hat;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, -34, 3.5, 0, Math.PI*2);
+    ctx.fillStyle = 'white';
+    ctx.fill();
+    // Dizzy X eyes when knocked
+    if (!flash && knock > 0.5) {
+      ctx.strokeStyle = '#444';
+      ctx.lineWidth = 1.5;
+      var drawX = function(ex, ey) {
+        ctx.beginPath(); ctx.moveTo(ex-2.5,ey-2.5); ctx.lineTo(ex+2.5,ey+2.5); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(ex+2.5,ey-2.5); ctx.lineTo(ex-2.5,ey+2.5); ctx.stroke();
+      };
+      drawX(-3.5, -14); drawX(3.5, -14);
+      // Squiggly mouth
+      ctx.beginPath();
+      ctx.moveTo(-5, -9);
+      for (var wx = -5; wx <= 5; wx += 2) {
+        ctx.lineTo(wx, -9 + Math.sin(wx*1.5)*2.5);
+      }
+      ctx.strokeStyle = '#c07040'; ctx.lineWidth = 1.8; ctx.stroke();
+    }
+    // Legs splayed out
+    ctx.strokeStyle = flash ? '#fff' : coat;
+    ctx.lineWidth = 5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-4, 12); ctx.lineTo(-10, 20 + Math.sin(knock*Math.PI)*6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo( 4, 12); ctx.lineTo( 10, 20 + Math.cos(knock*Math.PI)*6); ctx.stroke();
+    // Arms splayed
+    ctx.beginPath(); ctx.moveTo(-8, 0); ctx.lineTo(-16, -6 + Math.sin(walk)*4); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo( 8, 0); ctx.lineTo( 16, -6 + Math.cos(walk)*4); ctx.stroke();
+    ctx.restore();
+    ctx.restore();
+    return;
+  }
+
+  // --- NORMAL / WALKING ---
+  var bob = Math.sin(walk) * 2.5; // vertical head bob
+  var legSwing = Math.sin(walk) * 10; // degrees
+
+  // Shadow
+  ctx.beginPath();
+  ctx.ellipse(0, 13, 13, 4, 0, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(80,140,200,0.22)';
+  ctx.fill();
+
+  // Legs (behind body)
+  ctx.save();
+  ctx.strokeStyle = flash ? '#fff' : coat;
+  ctx.lineWidth = 5; ctx.lineCap = 'round';
+  // Left leg
+  ctx.save();
+  ctx.translate(-4, 10);
+  ctx.rotate((legSwing * Math.PI/180));
+  ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0, 12); ctx.stroke();
+  ctx.restore();
+  // Right leg
+  ctx.save();
+  ctx.translate(4, 10);
+  ctx.rotate((-legSwing * Math.PI/180));
+  ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0, 12); ctx.stroke();
+  ctx.restore();
+  ctx.restore();
+
+  // Body
+  ctx.beginPath();
+  ctx.ellipse(0, 2 + bob*0.3, 11, 13, 0, 0, Math.PI*2);
+  ctx.fillStyle = flash ? '#ffffff' : coat;
+  ctx.fill();
+
+  // Scarf
+  ctx.beginPath();
+  ctx.ellipse(0, -4 + bob*0.3, 12, 5, 0, 0, Math.PI*2);
+  ctx.fillStyle = flash ? '#ffffff' : hat;
+  ctx.fill();
+
+  // Head (bobs)
+  ctx.beginPath();
+  ctx.arc(0, -14 + bob, 10, 0, Math.PI*2);
+  ctx.fillStyle = flash ? '#ffffff' : skin;
+  ctx.fill();
+
+  // Hat brim
+  ctx.beginPath();
+  ctx.ellipse(0, -21 + bob, 9, 3.5, 0, 0, Math.PI*2);
+  ctx.fillStyle = flash ? '#ffffff' : hat;
+  ctx.fill();
+  // Hat top
+  ctx.beginPath();
+  ctx.rect(-6, -32 + bob, 12, 12);
+  ctx.fillStyle = flash ? '#ffffff' : hat;
+  ctx.fill();
+  // Pom pom
+  ctx.beginPath();
+  ctx.arc(0, -34 + bob, 3.5, 0, Math.PI*2);
+  ctx.fillStyle = 'white';
+  ctx.fill();
+
+  if (!flash) {
+    var ex = Math.cos(angle) * 3.5;
+    var ey = Math.sin(angle) * 2.5;
+    var eyY = -14 + bob;
+    ctx.fillStyle = '#444';
+    ctx.beginPath(); ctx.arc(-3.5 + ex*0.4, eyY + ey*0.4, 1.7, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc( 3.5 + ex*0.4, eyY + ey*0.4, 1.7, 0, Math.PI*2); ctx.fill();
+    // Mouth
+    ctx.beginPath();
+    ctx.arc(ex*0.3, -12 + bob + ey*0.3, laughing ? 5 : 4, 0.15, Math.PI - 0.15);
+    ctx.strokeStyle = '#c07040'; ctx.lineWidth = 1.8; ctx.stroke();
+    if (laughing) {
+      ctx.fillStyle = '#c07040';
+      ctx.beginPath();
+      ctx.arc(ex*0.3, -11 + bob + ey*0.3, 3, 0.1, Math.PI - 0.1);
+      ctx.fill();
+    }
+    // Rosy cheeks
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = '#ff8080';
+    ctx.beginPath(); ctx.ellipse(-6+ex*0.3, eyY+2+ey*0.3, 3, 2, 0, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse( 6+ex*0.3, eyY+2+ey*0.3, 3, 2, 0, 0, Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  // Throwing arm (swings opposite to legs)
+  var armSwing = -Math.sin(walk) * 8 * Math.PI/180;
+  var ax = Math.cos(angle) * 12, ay = Math.sin(angle) * 9;
+  ctx.save();
+  ctx.translate(7, -2);
+  ctx.rotate(armSwing);
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(ax * 0.75, ay * 0.75);
+  ctx.strokeStyle = flash ? '#fff' : coat;
+  ctx.lineWidth = 5; ctx.lineCap = 'round';
+  ctx.stroke();
+  ctx.restore();
+
+  // Back arm swings other way
+  ctx.save();
+  ctx.translate(-7, -2);
+  ctx.rotate(-armSwing);
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(-ax * 0.4, ay * 0.3);
+  ctx.strokeStyle = flash ? '#fff' : coat;
+  ctx.lineWidth = 4; ctx.lineCap = 'round';
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.restore();
+}
+
+// Player
+function makePlayer() {
+  return { x: W()/2, y: H()/2, r: 18, speed: 155, shootCD: 0, hitFlash: 0, laughTimer: 0, angle: 0, walkPhase: 0, moving: false };
+}
+function updatePlayer(p, dt) {
+  if (!isMobile) {
+    var dx = 0, dy = 0;
+    if (keys['ArrowLeft']  || keys['a'] || keys['A']) dx -= 1;
+    if (keys['ArrowRight'] || keys['d'] || keys['D']) dx += 1;
+    if (keys['ArrowUp']    || keys['w'] || keys['W']) dy -= 1;
+    if (keys['ArrowDown']  || keys['s'] || keys['S']) dy += 1;
+    var len = Math.sqrt(dx*dx + dy*dy);
+    p.moving = len > 0;
+    if (len > 0) { dx /= len; dy /= len; }
+    p.x = Math.max(p.r, Math.min(W()-p.r, p.x + dx*p.speed*dt));
+    p.y = Math.max(p.r, Math.min(H()-p.r, p.y + dy*p.speed*dt));
+    if (p.moving) p.walkPhase += dt * 8;
+  }
+  // joystick movement is applied in updateJoystickInput
+  p.shootCD -= dt;
+  p.hitFlash -= dt;
+  p.laughTimer -= dt;
+  p.angle = Math.atan2(mouseY - p.y, mouseX - p.x);
+}
+function drawPlayer(p) {
+  ctx.save();
+  ctx.globalAlpha = 0.35;
+  for (var i = 1; i <= 3; i++) {
+    ctx.beginPath();
+    ctx.arc(p.x + Math.cos(p.angle)*i*22, p.y + Math.sin(p.angle)*i*16, 2.5, 0, Math.PI*2);
+    ctx.fillStyle = 'white';
+    ctx.fill();
+  }
+  ctx.restore();
+  drawKid(p.x, p.y, '#ff6b9d', '#ff3d7f', '#ffd6a5', p.angle, {
+    flash: p.hitFlash > 0,
+    laughing: p.laughTimer > 0,
+    walkPhase: p.moving ? p.walkPhase : 0,
+    isPlayer: true
+  });
+}
+function playerShoot() {
+  if (!player || player.shootCD > 0) return;
+  player.shootCD = 0.3;
+  snowballs.push(makeBall(player.x, player.y, Math.cos(player.angle)*310, Math.sin(player.angle)*310, true));
+  playThrow();
+}
+
+// Enemy
+function makeEnemy(x, y, ci) {
+  return {
+    x: x, y: y, r: 16,
+    speed: 50 + wave*9 + Math.random()*18,
+    ci: ci % COATS.length,
+    shootTimer: 1.5 + Math.random()*2,
+    hitFlash: 0, laughTimer: 0,
+    angle: 0, wobble: Math.random()*Math.PI*2,
+    walkPhase: Math.random()*Math.PI*2,
+    knockPhase: 0,   // 0=upright, goes to 1 then stays
+    knockDone: false, // true when fully knocked and faded
+    dead: false,
+    fadeOut: 0       // 0..1 fade after knock
+  };
+}
+function updateEnemy(e, dt) {
+  // Still animate knockdown even when dead
+  if (e.dead) {
+    if (e.knockPhase < 1) {
+      e.knockPhase = Math.min(1, e.knockPhase + dt * 2.8);
+    } else {
+      e.fadeOut += dt * 0.9;
+      if (e.fadeOut >= 1) e.knockDone = true;
+    }
+    return;
+  }
+  e.wobble += dt * 2.2;
+  e.hitFlash -= dt;
+  e.laughTimer -= dt;
+  var tx = player.x + Math.cos(e.wobble)*22;
+  var ty = player.y + Math.sin(e.wobble)*22;
+  var dx = tx - e.x, dy = ty - e.y;
+  var dist = Math.sqrt(dx*dx + dy*dy);
+  e.angle = Math.atan2(player.y - e.y, player.x - e.x);
+  var isMoving = dist > 75;
+  if (isMoving) {
+    e.x += (dx/dist)*e.speed*dt;
+    e.y += (dy/dist)*e.speed*dt;
+    e.walkPhase += dt * 7;
+  }
+  e.x = Math.max(e.r, Math.min(W()-e.r, e.x));
+  e.y = Math.max(e.r, Math.min(H()-e.r, e.y));
+  e.shootTimer -= dt;
+  if (e.shootTimer <= 0) {
+    e.shootTimer = 2.2 + Math.random()*1.8 - wave*0.08;
+    var ang = Math.atan2(player.y - e.y, player.x - e.x);
+    snowballs.push(makeBall(e.x, e.y, Math.cos(ang)*190, Math.sin(ang)*190, false));
+    playThrow();
+    if (Math.random() < 0.4) playKidLaugh();
+    if (Math.random() < 0.55) kidSpeakTaunt(e.ci);
+  }
+}
+function drawEnemy(e) {
+  if (e.knockDone) return;
+  var alpha = e.dead ? Math.max(0, 1 - e.fadeOut) : 1;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  drawKid(e.x, e.y, COATS[e.ci], HATS[e.ci], '#ffd6a5', e.angle, {
+    flash: e.hitFlash > 0,
+    laughing: e.laughTimer > 0,
+    walkPhase: e.walkPhase,
+    knockPhase: e.knockPhase
+  });
+  ctx.restore();
+}
+function hitEnemy(e) {
+  e.dead = true;
+  e.knockPhase = 0;
+  burstParticles(e.x, e.y, '#dff0ff', 12);
+  addFloaters(e.x, e.y);
+  score += 10;
+  updateUI();
+  playHitEnemy();
+  playKidLaugh();
+  kidSpeakHit(e.ci);
+}
+
+// Snowball
+function makeBall(x, y, vx, vy, fromPlayer) {
+  return { x:x, y:y, vx:vx, vy:vy, fromPlayer:fromPlayer, r: fromPlayer?7:5.5, dead:false, trail:[] };
+}
+function updateBall(b, dt) {
+  b.trail.push({x:b.x, y:b.y});
+  if (b.trail.length > 6) b.trail.shift();
+  b.x += b.vx*dt;
+  b.y += b.vy*dt;
+  if (b.x < -20 || b.x > W()+20 || b.y < -20 || b.y > H()+20) b.dead = true;
+}
+function drawBall(b) {
+  for (var i = 0; i < b.trail.length; i++) {
+    var t = b.trail[i];
+    ctx.save();
+    ctx.globalAlpha = (i/b.trail.length)*0.28;
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, b.r*(i/b.trail.length)*0.7, 0, Math.PI*2);
+    ctx.fillStyle = '#cce8ff';
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.save();
+  ctx.shadowColor = 'rgba(100,180,255,0.5)';
+  ctx.shadowBlur = 7;
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, b.r, 0, Math.PI*2);
+  ctx.fillStyle = '#eef8ff';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(b.x - b.r*0.3, b.y - b.r*0.3, b.r*0.4, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.fill();
+  ctx.restore();
+}
+
+// Particles
+function burstParticles(x, y, color, n) {
+  for (var i = 0; i < n; i++) {
+    particles.push({ x:x, y:y, vx:(Math.random()-0.5)*200, vy:(Math.random()-0.5)*200-50, life:1, color:color, r:2.5+Math.random()*3.5 });
+  }
+}
+function updateParticle(p, dt) {
+  p.x += p.vx*dt; p.y += p.vy*dt;
+  p.vy += 180*dt;
+  p.life -= dt*1.6;
+}
+function drawParticle(p) {
+  if (p.life <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, p.life);
+  ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+  ctx.fillStyle = p.color; ctx.fill();
+  ctx.restore();
+}
+
+// Floaters
+var EMOJIS = [':D','XD','^_^','<3','!!','lol'];
+function addFloaters(x, y) {
+  var emojiList = ['snow','haha','star'];
+  for (var i = 0; i < 3; i++) {
+    (function(ii) {
+      setTimeout(function() {
+        floaters.push({ x: x+(Math.random()-0.5)*30, y: y-ii*18, vy:-72, life:1.5, idx: Math.floor(Math.random()*6) });
+      }, ii*130);
+    })(i);
+  }
+}
+var FLOATTEXT = ['<3','XD',':D','lol','haha','yay!'];
+function updateFloater(f, dt) { f.y += f.vy*dt; f.life -= dt; }
+function drawFloater(f) {
+  if (f.life <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, f.life);
+  ctx.font = 'bold ' + Math.round(16 + (1.5-f.life)*5) + 'px Comic Sans MS, cursive';
+  ctx.fillStyle = '#1a7abf';
+  ctx.textAlign = 'center';
+  ctx.fillText(FLOATTEXT[f.idx], f.x, f.y);
+  ctx.restore();
+}
+
+// Collisions
+function checkCollisions() {
+  for (var i = 0; i < snowballs.length; i++) {
+    var b = snowballs[i];
+    if (b.dead) continue;
+    if (b.fromPlayer) {
+      for (var j = 0; j < enemies.length; j++) {
+        var e = enemies[j];
+        if (e.dead) continue;
+        var dx = b.x-e.x, dy = b.y-e.y;
+        if (Math.sqrt(dx*dx+dy*dy) < e.r+b.r) {
+          b.dead = true;
+          hitEnemy(e);
+          break;
+        }
+      }
+    } else {
+      if (!player) continue;
+      var dx2 = b.x-player.x, dy2 = b.y-player.y;
+      if (Math.sqrt(dx2*dx2+dy2*dy2) < player.r+b.r) {
+        b.dead = true;
+        player.hitFlash = 0.35;
+        player.laughTimer = 1.8;
+        burstParticles(player.x, player.y, '#ffffff', 10);
+        addFloaters(player.x, player.y);
+        lives--;
+        updateUI();
+        playHitPlayer();
+        playKidOof();
+        kidSpeakPlayerOof();
+        // A nearby enemy taunts
+        if (enemies.length > 0) {
+          var ne = enemies[Math.floor(Math.random()*enemies.length)];
+          kidSpeakPlayerHit(ne.ci);
+        }
+        if (lives <= 0) endGame();
+      }
+    }
+  }
+}
+
+function spawnWave() {
+  var count = 3 + wave*2;
+  var m = 55;
+  for (var i = 0; i < count; i++) {
+    var ex, ey;
+    var side = Math.floor(Math.random()*4);
+    if (side===0)      { ex=Math.random()*(W()-m*2)+m; ey=m*0.4; }
+    else if (side===1) { ex=W()-m*0.4; ey=Math.random()*(H()-m*2)+m; }
+    else if (side===2) { ex=Math.random()*(W()-m*2)+m; ey=H()-m*0.4; }
+    else               { ex=m*0.4; ey=Math.random()*(H()-m*2)+m; }
+    enemies.push(makeEnemy(ex, ey, i));
+  }
+}
+
+function updateUI() {
+  scoreDisplay.textContent = score;
+  livesDisplay.textContent = lives;
+  waveDisplay.textContent = wave;
+}
+
+function initGame() {
+  score=0; lives=3; wave=1;
+  player = makePlayer();
+  snowballs=[]; enemies=[]; particles=[]; floaters=[]; snowflakes=[];
+  for (var i=0; i<55; i++) snowflakes.push(makeFlake());
+  spawnWave();
+  updateUI();
+}
+
+function endGame() {
+  gameRunning = false;
+  playGameOver();
+  kidSpeakGameOver();
+  if (windNode) { try { windNode.gain.gain.exponentialRampToValueAtTime(0.001, getAudio().currentTime + 1); } catch(e){} }
+  overlay.querySelector('h1').textContent = 'Oh No! :(';
+  overlay.querySelector('p').innerHTML = 'You got hit too many times!<br>But everyone had fun!<br><strong>Score: ' + score + '</strong>';
+  startBtn.textContent = 'Play Again!';
+  overlay.style.display = 'flex';
+}
+
+function loop(ts) {
+  if (!gameRunning) return;
+  var dt = Math.min((ts - lastTime)/1000, 0.05);
+  lastTime = ts;
+
+  drawBg();
+
+  updateJoystickInput(dt);
+  for (var i=0; i<snowflakes.length; i++) { updateFlake(snowflakes[i],dt); drawFlake(snowflakes[i]); }
+
+  updatePlayer(player, dt);
+  for (var i=0; i<enemies.length; i++) updateEnemy(enemies[i],dt);
+  for (var i=0; i<snowballs.length; i++) updateBall(snowballs[i],dt);
+  for (var i=0; i<particles.length; i++) updateParticle(particles[i],dt);
+  for (var i=0; i<floaters.length; i++) updateFloater(floaters[i],dt);
+
+  checkCollisions();
+
+  snowballs = snowballs.filter(function(b){return !b.dead;});
+  particles  = particles.filter(function(p){return p.life>0;});
+  floaters   = floaters.filter(function(f){return f.life>0;});
+
+  // Depth sort - include dying enemies still animating
+  var chars = [];
+  for (var i=0; i<enemies.length; i++) {
+    if (!enemies[i].knockDone) chars.push({y:enemies[i].y, e:enemies[i]});
+  }
+  chars.push({y:player.y, e:null});
+  chars.sort(function(a,b){return a.y-b.y;});
+  for (var i=0; i<chars.length; i++) {
+    if (chars[i].e) drawEnemy(chars[i].e);
+    else drawPlayer(player);
+  }
+
+  for (var i=0; i<snowballs.length; i++) drawBall(snowballs[i]);
+  for (var i=0; i<particles.length; i++) drawParticle(particles[i]);
+  ctx.globalAlpha=1;
+  for (var i=0; i<floaters.length; i++) drawFloater(floaters[i]);
+  ctx.globalAlpha=1;
+
+  // Wave done when all enemies are fully knocked out and done animating
+  var allDone = enemies.length > 0;
+  for (var i=0; i<enemies.length; i++) { if (!enemies[i].knockDone) { allDone=false; break; } }
+  if (allDone) {
+    wave++;
+    enemies=[];
+    spawnWave();
+    updateUI();
+    playWaveClear();
+    kidSpeakWave();
+  }
+
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener('keydown', function(e){ keys[e.key]=true; if(e.key.indexOf('Arrow')===0) e.preventDefault(); });
+window.addEventListener('keyup',   function(e){ keys[e.key]=false; });
+
+canvas.addEventListener('mousemove', function(e) {
+  var r = canvas.getBoundingClientRect();
+  mouseX = (e.clientX - r.left) * (W()/r.width);
+  mouseY = (e.clientY - r.top)  * (H()/r.height);
+});
+canvas.addEventListener('mousedown', function(e) {
+  if (e.button===0 && gameRunning) playerShoot();
+});
+
+// ---- Dual Joystick Touch System ----
+var jLeft  = { active:false, id:-1, bx:0, by:0, dx:0, dy:0 };
+var jRight = { active:false, id:-1, bx:0, by:0, dx:0, dy:0 };
+var JR = 50; // joystick radius
+
+function getZoneRect(side) {
+  var el = document.getElementById(side === 'left' ? 'jzoneLeft' : 'jzoneRight');
+  return el.getBoundingClientRect();
+}
+
+function updateJoystickVisual(side, j) {
+  var base  = document.getElementById(side === 'left' ? 'jbaseLeft'  : 'jbaseRight');
+  var thumb = document.getElementById(side === 'left' ? 'jthumbLeft' : 'jthumbRight');
+  if (!j.active) {
+    base.style.display  = 'none';
+    thumb.style.display = 'none';
+    return;
+  }
+  var zone = getZoneRect(side);
+  var lx = j.bx - zone.left, ly = j.by - zone.top;
+  base.style.display  = 'block';
+  thumb.style.display = 'block';
+  base.style.left  = lx + 'px';
+  base.style.top   = ly + 'px';
+  thumb.style.left = (lx + j.dx) + 'px';
+  thumb.style.top  = (ly + j.dy) + 'px';
+}
+
+function handleTouchStart(e) {
+  e.preventDefault();
+  for (var i = 0; i < e.changedTouches.length; i++) {
+    var t = e.changedTouches[i];
+    var cx = t.clientX, cy = t.clientY;
+    var lRect = getZoneRect('left');
+    var rRect = getZoneRect('right');
+    if (!jLeft.active && cx >= lRect.left && cx <= lRect.right && cy >= lRect.top && cy <= lRect.bottom) {
+      jLeft = { active:true, id:t.identifier, bx:cx, by:cy, dx:0, dy:0 };
+      updateJoystickVisual('left', jLeft);
+    } else if (!jRight.active && cx >= rRect.left && cx <= rRect.right && cy >= rRect.top && cy <= rRect.bottom) {
+      jRight = { active:true, id:t.identifier, bx:cx, by:cy, dx:0, dy:0 };
+      updateJoystickVisual('right', jRight);
+      // Aim toward center of stick on first touch
+      var r2 = canvas.getBoundingClientRect();
+      mouseX = (cx - r2.left) * (W()/r2.width);
+      mouseY = (cy - r2.top)  * (H()/r2.height);
+    }
+  }
+}
+
+function handleTouchMove(e) {
+  e.preventDefault();
+  for (var i = 0; i < e.changedTouches.length; i++) {
+    var t = e.changedTouches[i];
+    if (jLeft.active && t.identifier === jLeft.id) {
+      var ddx = t.clientX - jLeft.bx;
+      var ddy = t.clientY - jLeft.by;
+      var dist = Math.sqrt(ddx*ddx + ddy*ddy);
+      if (dist > JR) { ddx = ddx/dist*JR; ddy = ddy/dist*JR; }
+      jLeft.dx = ddx; jLeft.dy = ddy;
+      updateJoystickVisual('left', jLeft);
+    }
+    if (jRight.active && t.identifier === jRight.id) {
+      var ddx = t.clientX - jRight.bx;
+      var ddy = t.clientY - jRight.by;
+      var dist = Math.sqrt(ddx*ddx + ddy*ddy);
+      if (dist > JR) { ddx = ddx/dist*JR; ddy = ddy/dist*JR; }
+      jRight.dx = ddx; jRight.dy = ddy;
+      updateJoystickVisual('right', jRight);
+      // Right stick controls aim direction relative to player
+      if (dist > 8 && player) {
+        var aimAngle = Math.atan2(ddy, ddx);
+        var ahead = 120;
+        mouseX = player.x + Math.cos(aimAngle) * ahead;
+        mouseY = player.y + Math.sin(aimAngle) * ahead;
+      }
+    }
+  }
+}
+
+function handleTouchEnd(e) {
+  e.preventDefault();
+  for (var i = 0; i < e.changedTouches.length; i++) {
+    var t = e.changedTouches[i];
+    if (jLeft.active && t.identifier === jLeft.id) {
+      jLeft = { active:false, id:-1, bx:0, by:0, dx:0, dy:0 };
+      updateJoystickVisual('left', jLeft);
+    }
+    if (jRight.active && t.identifier === jRight.id) {
+      jRight = { active:false, id:-1, bx:0, by:0, dx:0, dy:0 };
+      updateJoystickVisual('right', jRight);
+    }
+  }
+}
+
+var jLeftEl  = document.getElementById('jzoneLeft');
+var jRightEl = document.getElementById('jzoneRight');
+[jLeftEl, jRightEl].forEach(function(el) {
+  el.addEventListener('touchstart', handleTouchStart, {passive:false});
+  el.addEventListener('touchmove',  handleTouchMove,  {passive:false});
+  el.addEventListener('touchend',   handleTouchEnd,   {passive:false});
+  el.addEventListener('touchcancel',handleTouchEnd,   {passive:false});
+});
+
+// Right joystick auto-shoots while actively pushed beyond deadzone
+var rightStickShotTimer = 0;
+function updateJoystickInput(dt) {
+  if (!isMobile) return;
+  // Left stick → movement via keys simulation
+  if (jLeft.active) {
+    var mag = Math.sqrt(jLeft.dx*jLeft.dx + jLeft.dy*jLeft.dy);
+    if (mag > 8) {
+      keys['_jl'] = true;
+      // Inject into player movement directly
+      var nx = jLeft.dx/JR, ny = jLeft.dy/JR;
+      if (player) {
+        player.x = Math.max(player.r, Math.min(W()-player.r, player.x + nx*player.speed*dt));
+        player.y = Math.max(player.r, Math.min(H()-player.r, player.y + ny*player.speed*dt));
+        player.walkPhase += dt * 8;
+        player.moving = true;
+      }
+    } else {
+      if (player) player.moving = false;
+    }
+  } else {
+    if (player) player.moving = false;
+  }
+  // Right stick → auto-shoot while pushed
+  if (jRight.active) {
+    var mag2 = Math.sqrt(jRight.dx*jRight.dx + jRight.dy*jRight.dy);
+    if (mag2 > 14 && gameRunning) {
+      rightStickShotTimer -= dt;
+      if (rightStickShotTimer <= 0) {
+        playerShoot();
+        rightStickShotTimer = 0.32;
+      }
+    }
+  } else {
+    rightStickShotTimer = 0;
+  }
+}
+
+startBtn.addEventListener('click', function() {
+  overlay.style.display = 'none';
+  try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch(e) {}
+  initGame();
+  gameRunning = true;
+  lastTime = performance.now();
+  if (windNode) { try { windNode.src.stop(); } catch(e){} }
+  windNode = playWindAmbience();
+  requestAnimationFrame(loop);
+});
+
+drawBg();
+</script>
+</body>
+</html>
